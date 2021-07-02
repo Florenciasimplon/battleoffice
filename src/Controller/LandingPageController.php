@@ -16,6 +16,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpClient\HttpClient;
+use Symfony\Component\Mailer\MailerInterface;
+use Symfony\Component\Mime\Email;
 use Symfony\Config\FrameworkConfig;
 class LandingPageController extends AbstractController
 {
@@ -41,6 +43,35 @@ class LandingPageController extends AbstractController
         
         
         if ($form->isSubmitted() && $form->isValid()) {
+            if($commande->getLivraison()->getPrenom() == null && $commande->getLivraison()->getNom() == null && $commande->getLivraison()->getAdresseLivraison() == null){
+
+                $prenom = $commande->getClient()->getPrenom();
+                $commande->getLivraison()->setPrenom($prenom);
+
+                $nom = $commande->getClient()->getNom();
+                $commande->getLivraison()->setNom($nom);
+
+                $adresse = $commande->getClient()->getAdresse();
+                $commande->getLivraison()->setAdresseLivraison($adresse);
+
+                if($commande->getClient()->getComplement() !== null){
+
+                    $complement = $commande->getClient()->getComplement();
+                    $commande->getLivraison()->setComplementLivraison($complement);
+
+                }
+
+                $ville = $commande->getClient()->getVille();
+                $commande->getLivraison()->setVille($ville);
+
+                $codePostal = $commande->getClient()->getCodepostal();
+                $commande->getLivraison()->setCodePostal($codePostal);
+
+                $telephone = $commande->getClient()->getTelephone();
+                $commande->getLivraison()->setTelephone($telephone);
+
+            }
+
             
             $type = $request->get('type');
             $token = 'mJxTXVXMfRzLg6ZdhUhM4F6Eutcm1ZiPk4fNmvBMxyNR4ciRsc8v0hOmlzA0vTaX';
@@ -69,18 +100,18 @@ class LandingPageController extends AbstractController
                         'addresses' => [
                             'billing' => [
                                 'address_line1' => $clientInfo->getAdresse(),
-                                'address_line2' => $clientInfo->getComplement(),
+                                'address_line2' => strval($clientInfo->getComplement()),
                                 'city' => $clientInfo->getVille(),
                                 'zipcode' => strval($clientInfo->getCodepostal()),
                                 'country' => $clientInfo->getPays(),
                                 'phone' => strval($clientInfo->getTelephone()),
                             ],
                             'shipping' =>  [
-                                'address_line1' => $livraisonInfo->getAdresseLivraison(),
-                                'address_line2' => $livraisonInfo->getComplementLivraison(),
-                                'city' => $livraisonInfo->getVille(),
+                                'address_line1' => strval($livraisonInfo->getAdresseLivraison()),
+                                'address_line2' => strval($livraisonInfo->getComplementLivraison()),
+                                'city' => strval($livraisonInfo->getVille()),
                                 'zipcode' => strval($livraisonInfo->getCodePostal()),
-                                'country' => $livraisonInfo->getPays(),
+                                'country' => strval($livraisonInfo->getPays()),
                                 'phone' => strval($livraisonInfo->getTelephone()),
                             ]
                         ],
@@ -88,7 +119,7 @@ class LandingPageController extends AbstractController
             ];
 
             $datasJson = json_encode($datas);
-           
+       
             $httpClient = HttpClient::create([], 6, 50);
             $response = $httpClient->request('POST', 'https://api-commerce.simplon-roanne.com/order', 
                 ['headers' => [
@@ -153,10 +184,11 @@ class LandingPageController extends AbstractController
      /**
      * @Route("/payment/{id}", name="payment")
      */
-    public function payment(Commande $commande,Request $request){
+
+    public function payment(Commande $commande,Request $request, MailerInterface $email){
         
         $token = 'mJxTXVXMfRzLg6ZdhUhM4F6Eutcm1ZiPk4fNmvBMxyNR4ciRsc8v0hOmlzA0vTaX';
-
+        $clientmail = $commande->getClient()->getEmail();
         $form = $this->createForm(CommandeType2::class, $commande);
         $form->handleRequest($request);
         if ($form->isSubmitted() && $form->isValid()) {
@@ -199,6 +231,7 @@ class LandingPageController extends AbstractController
                 $commande->setStatus('PAID');
                 $entityManager->persist($commande);
                 $entityManager->flush();
+                $this->sendEmail($email, $clientmail);
 
                 //redirection
                 return $this->redirectToRoute('confirmation', [
@@ -217,11 +250,11 @@ class LandingPageController extends AbstractController
         /**
          * @Route("/paypal/{id}", name="paypal")
          */
-   public function paypal(Commande $commande, Request $request)
+   public function paypal(Commande $commande, Request $request,MailerInterface $email)
         {
 
         $token = 'mJxTXVXMfRzLg6ZdhUhM4F6Eutcm1ZiPk4fNmvBMxyNR4ciRsc8v0hOmlzA0vTaX';
-
+        $clientmail = $commande->getClient()->getEmail();
   
         if ($request->isMethod('post')) {
                 //envoi à la base de données
@@ -252,6 +285,7 @@ class LandingPageController extends AbstractController
                 $entityManager = $this->getDoctrine()->getManager();
                 $entityManager->persist($commande);
                 $entityManager->flush();
+                $this->sendEmail($email, $clientmail);
                 return $this->redirectToRoute('confirmation', [
                     'id' => $commande->getId(),
                 ]);
@@ -263,5 +297,22 @@ class LandingPageController extends AbstractController
 
     ]);
 
+    }
+    public function sendEmail(MailerInterface $mailer,$clientmail)
+    {
+        $email = (new Email())
+            ->from('contact@battleoffice.com')
+            ->to($clientmail)
+            //->cc('cc@example.com')
+            //->bcc('bcc@example.com')
+            //->replyTo('fabien@example.com')
+            //->priority(Email::PRIORITY_HIGH)
+            ->subject('Commande validée')
+            ->text('Votre commande a bien été effectuée');
+           
+
+        $mailer->send($email);
+
+        
     }
 }
